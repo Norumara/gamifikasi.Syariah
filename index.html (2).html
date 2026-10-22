@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="ms" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabaran Nahu Arab Interactive</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts: Amiri (Arabic) & Outfit (Modern Sans) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        .font-arabic {
+            font-family: 'Amiri', serif;
+            direction: rtl;
+        }
+        /* Custom Keyframe Animations */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+        @keyframes float-box {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(1deg); }
+        }
+        .animate-float {
+            animation: float-box 3s infinite ease-in-out;
+        }
+        /* Mirroring webcam for natural UI interaction */
+        .mirror-x {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white h-full relative overflow-hidden select-none">
+
+    <!-- Video Element (Hidden, used as source for MediaPipe) -->
+    <video id="webcam" class="hidden" playsinline></video>
+
+    <!-- Canvas for Live Mirror Background Feed -->
+    <canvas id="canvas-bg" class="absolute inset-0 w-full h-full object-cover mirror-x z-0 brightness-75 contrast-110"></canvas>
+
+    <!-- Canvas for Visual Cursor and Pointer Effects -->
+    <canvas id="canvas-fg" class="absolute inset-0 w-full h-full pointer-events-none z-20 mirror-x"></canvas>
+
+    <!-- Dark Overlay Gradient for Readability -->
+    <div class="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-900/50 to-slate-950/90 pointer-events-none z-10"></div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app" class="relative z-30 h-full w-full flex flex-col justify-between p-4 md:p-6">
+
+        <!-- HEADER / HUD -->
+        <header class="flex justify-between items-center bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700/60 shadow-2xl">
+            <div class="flex items-center space-x-3 space-x-reverse">
+                <div class="bg-amber-500/20 text-amber-400 p-3 rounded-xl border border-amber-500/30">
+                    <i class="fa-solid font-arabic text-xl font-bold">اللغة العربية</i>
+                </div>
+                <div>
+                    <h1 class="text-lg md:text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-amber-200">
+                        Cabaran Nahu Arab SMA
+                    </h1>
+                    <p class="text-xs text-slate-300">Al-Lughah Al-Arabiah Al-Muasirah</p>
+                </div>
+            </div>
+
+            <!-- SCORE & TIMER DISPLAY -->
+            <div id="hud-stats" class="hidden flex items-center space-x-4 md:space-x-8">
+                <!-- Question Counter -->
+                <div class="text-center">
+                    <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Soalan</div>
+                    <div class="text-lg md:text-2xl font-black text-amber-400" id="hud-question-num">1/10</div>
+                </div>
+                <!-- Score -->
+                <div class="text-center">
+                    <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Skor</div>
+                    <div class="text-lg md:text-2xl font-black text-emerald-400" id="hud-score">0</div>
+                </div>
+                <!-- Time Bonus Gauge -->
+                <div class="text-center">
+                    <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Masa</div>
+                    <div class="text-lg md:text-2xl font-black text-cyan-400" id="hud-timer">15s</div>
+                </div>
+            </div>
+
+            <!-- Camera Toggle & Controls -->
+            <div class="flex items-center gap-2">
+                <button id="btn-sound" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition">
+                    <i class="fa-solid fa-volume-high text-lg" id="icon-sound"></i>
+                </button>
+                <button id="btn-camera-toggle" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition">
+                    <i class="fa-solid fa-video text-lg"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- VIEW 1: START SCREEN -->
+        <main id="view-start" class="flex-1 flex flex-col items-center justify-center text-center my-auto p-4 z-40">
+            <div class="bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl border border-slate-700 max-w-2xl w-full shadow-2xl space-y-6">
+                <div class="inline-block p-4 bg-amber-500/10 rounded-full border border-amber-500/30 mb-2">
+                    <i class="fa-solid fa-box-open text-5xl text-amber-400 animate-bounce"></i>
+                </div>
+                <h2 class="text-3xl md:text-4xl font-black text-white">
+                    Permainan Nahu Kotak Misteri
+                </h2>
+                <p class="text-slate-300 text-sm md:text-base leading-relaxed">
+                    Uji kefahaman <span class="text-amber-300 font-semibold">Fi'il Madhi, Mudhari', Amar, Mu'tal, Sohih & Wazan Thulathi</span>.
+                    Tunjukkan <span class="text-cyan-400 font-bold">Jari Telunjuk</span> anda pada webcam dan tahan kursor pada kotak hadiah pilihan selama <span class="text-emerald-400 font-bold">1 saat (Dwell)</span> untuk membukanya!
+                </p>
+
+                <!-- Status Hand Tracking -->
+                <div id="camera-status" class="p-4 rounded-xl bg-slate-800/80 border border-slate-700 text-amber-400 text-sm flex items-center justify-center gap-3">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Memuatkan modul cam & pengecaman MediaPipe...</span>
+                </div>
+
+                <div class="pt-4 flex flex-col md:flex-row gap-4 justify-center">
+                    <button id="btn-start" disabled class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-lg px-8 py-4 rounded-2xl shadow-lg shadow-amber-500/20 opacity-50 cursor-not-allowed transition transform hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                        <i class="fa-solid fa-play"></i> Mula Permainan
+                    </button>
+                    <button id="btn-mouse-mode" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm px-6 py-4 rounded-2xl border border-slate-700 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-mouse"></i> Mod Tetikus / Sentuh
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- VIEW 2: GAMEPLAY CONTAINER -->
+        <main id="view-game" class="hidden flex-1 relative flex flex-col justify-between py-2">
+            
+            <!-- CENTER QUESTION BOX -->
+            <div class="self-center my-auto w-full max-w-2xl bg-slate-900/90 backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-slate-700/80 shadow-2xl text-center space-y-4 animate-float z-30">
+                <span id="topic-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-widest">
+                    Fi'il & Wazan
+                </span>
+
+                <!-- Question Text in Malay & Arabic -->
+                <div id="q-prompt" class="text-slate-200 text-base md:text-lg font-medium">
+                    Soalan sedang disediakan...
+                </div>
+
+                <!-- Arabic Highlight Sentence / Verse -->
+                <div id="q-arabic" class="font-arabic text-3xl md:text-5xl font-bold text-amber-400 py-3 leading-relaxed tracking-wide">
+                    ---
+                </div>
+
+                <!-- Guidance Info -->
+                <div class="text-xs text-slate-400 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-hand-pointer text-cyan-400"></i>
+                    <span>Tahan jari telunjuk pada 1 daripada 4 Kotak Hadiah untuk menjawab</span>
+                </div>
+            </div>
+
+            <!-- 4 CORNER GIFT BOXES -->
+            <!-- Top Left (Box 0) -->
+            <div id="gift-0" class="gift-box absolute top-2 left-2 md:top-6 md:left-6 w-36 h-36 md:w-48 md:h-48 z-30 flex flex-col items-center justify-center transition-transform">
+                <div class="box-card relative w-full h-full bg-slate-900/85 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-amber-400">
+                    <div class="gift-icon text-amber-400 text-4xl md:text-5xl mb-2 transition-transform duration-500">
+                        <i class="fa-solid fa-gift"></i>
+                    </div>
+                    <div class="gift-text font-arabic text-xl md:text-2xl font-bold text-slate-100 text-center leading-snug">
+                        --
+                    </div>
+                    <!-- Dwell Radial Progress Bar -->
+                    <div class="dwell-progress absolute inset-0 bg-amber-500/20 origin-bottom transform scale-y-0 transition-transform duration-75 pointer-events-none"></div>
+                </div>
+            </div>
+
+            <!-- Top Right (Box 1) -->
+            <div id="gift-1" class="gift-box absolute top-2 right-2 md:top-6 md:right-6 w-36 h-36 md:w-48 md:h-48 z-30 flex flex-col items-center justify-center transition-transform">
+                <div class="box-card relative w-full h-full bg-slate-900/85 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-amber-400">
+                    <div class="gift-icon text-amber-400 text-4xl md:text-5xl mb-2 transition-transform duration-500">
+                        <i class="fa-solid fa-gift"></i>
+                    </div>
+                    <div class="gift-text font-arabic text-xl md:text-2xl font-bold text-slate-100 text-center leading-snug">
+                        --
+                    </div>
+                    <div class="dwell-progress absolute inset-0 bg-amber-500/20 origin-bottom transform scale-y-0 transition-transform duration-75 pointer-events-none"></div>
+                </div>
+            </div>
+
+            <!-- Bottom Left (Box 2) -->
+            <div id="gift-2" class="gift-box absolute bottom-2 left-2 md:bottom-6 md:left-6 w-36 h-36 md:w-48 md:h-48 z-30 flex flex-col items-center justify-center transition-transform">
+                <div class="box-card relative w-full h-full bg-slate-900/85 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-amber-400">
+                    <div class="gift-icon text-amber-400 text-4xl md:text-5xl mb-2 transition-transform duration-500">
+                        <i class="fa-solid fa-gift"></i>
+                    </div>
+                    <div class="gift-text font-arabic text-xl md:text-2xl font-bold text-slate-100 text-center leading-snug">
+                        --
+                    </div>
+                    <div class="dwell-progress absolute inset-0 bg-amber-500/20 origin-bottom transform scale-y-0 transition-transform duration-75 pointer-events-none"></div>
+                </div>
+            </div>
+
+            <!-- Bottom Right (Box 3) -->
+            <div id="gift-3" class="gift-box absolute bottom-2 right-2 md:bottom-6 md:right-6 w-36 h-36 md:w-48 md:h-48 z-30 flex flex-col items-center justify-center transition-transform">
+                <div class="box-card relative w-full h-full bg-slate-900/85 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-amber-400">
+                    <div class="gift-icon text-amber-400 text-4xl md:text-5xl mb-2 transition-transform duration-500">
+                        <i class="fa-solid fa-gift"></i>
+                    </div>
+                    <div class="gift-text font-arabic text-xl md:text-2xl font-bold text-slate-100 text-center leading-snug">
+                        --
+                    </div>
+                    <div class="dwell-progress absolute inset-0 bg-amber-500/20 origin-bottom transform scale-y-0 transition-transform duration-75 pointer-events-none"></div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- VIEW 3: RESULTS / HIGH SCORE SCREEN -->
+        <main id="view-result" class="hidden flex-1 flex flex-col items-center justify-center text-center my-auto p-4 z-40">
+            <div class="bg-slate-900/95 backdrop-blur-2xl p-8 rounded-3xl border border-slate-700 max-w-xl w-full shadow-2xl space-y-6">
+                <div class="inline-block p-4 bg-amber-500/20 rounded-full border border-amber-500/40">
+                    <i class="fa-solid fa-trophy text-5xl text-amber-400 animate-pulse"></i>
+                </div>
+
+                <div>
+                    <h2 class="text-3xl font-black text-white">Keputusan Permainan</h2>
+                    <p class="text-slate-400 text-sm mt-1">Syabas kerana menyelesaikan cabaran!</p>
+                </div>
+
+                <!-- Final Scoreboard -->
+                <div class="grid grid-cols-2 gap-4 bg-slate-800/80 p-4 rounded-2xl border border-slate-700">
+                    <div class="p-3 bg-slate-900/60 rounded-xl">
+                        <div class="text-xs text-slate-400">Jumlah Skor</div>
+                        <div id="res-score" class="text-3xl font-black text-amber-400">0</div>
+                    </div>
+                    <div class="p-3 bg-slate-900/60 rounded-xl">
+                        <div class="text-xs text-slate-400">Ketepatan Jawapan</div>
+                        <div id="res-accuracy" class="text-3xl font-black text-emerald-400">0%</div>
+                    </div>
+                </div>
+
+                <!-- High Scores Ranking -->
+                <div class="text-left space-y-2">
+                    <h3 class="text-xs uppercase tracking-wider text-slate-400 font-bold">Carta Markah Tertinggi</h3>
+                    <div id="high-score-list" class="space-y-2 max-h-40 overflow-y-auto pr-1">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Restart Button -->
+                <div class="pt-2">
+                    <button id="btn-restart" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-lg py-4 rounded-2xl shadow-lg shadow-amber-500/20 transition transform hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                        <i class="fa-solid fa-rotate-right"></i> Main Lagi
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- FOOTER INFO -->
+        <footer class="text-center text-xs text-slate-400 py-2">
+            <span>Al-Lughah Al-Arabiah Al-Muasirah (SMA) &bull; Kawalan Isyarat Jari MediaPipe</span>
+        </footer>
+
+    </div>
+
+    <script>
+        /* ===================================================================
+           1. QUESTION DATABASE (SMA - AL-LUGHAH AL-ARABIAH AL-MUASIRAH)
+           Topics: Fi'il Madhi, Mudhari', Amar, Sohih, Mu'tal, Wazan Thulathi
+           =================================================================== */
+        const questionBank = [
+            {
+                topic: "Fi'il Madhi (فعل ماض)",
+                prompt: "Pilih Fi'il Madhi yang sesuai untuk melengkapkan ayat berikut:",
+                arabic: "الطَّالِبُ _____ إِلَى الْمَدْرَسَةِ صَبَاحًا.",
+                options: ["ذَهَبَ", "يَذْهَبُ", "إِذْهَبْ", "ذَاهِبٌ"],
+                answer: 0,
+                explain: "'ذَهَبَ' ialah Fi'il Madhi untuk dhomir (هُوَ)."
+            },
+            {
+                topic: "Fi'il Mudhari' (فعل مضارع)",
+                prompt: "Pilih bentuk Fi'il Mudhari' bagi kata kerja ini:",
+                arabic: "فَاطِمَةُ _____ الْقُرْآنَ كُلَّ يَوْمٍ.",
+                options: ["قَرَأَتْ", "تَقْرَأُ", "إِقْرَأْ", "يَقْرَءُونَ"],
+                answer: 1,
+                explain: "'تَقْرَأُ' ialah Fi'il Mudhari' bagi dhomir (هِيَ)."
+            },
+            {
+                topic: "Fi'il Amar (فعل أمر)",
+                prompt: "Pilih kata perintah (Fi'il Amar) yang betul untuk seorang lelaki:",
+                arabic: "يَا أَحْمَدُ، _____ الدَّرْسَ بِاجْتِهَادٍ!",
+                options: ["كَتَبَ", "يَكْتُبُ", "أُكْتُبْ", "تَكْتُبِينَ"],
+                answer: 2,
+                explain: "'أُكْتُبْ' ialah Fi'il Amar (perintah) untuk (أَنْتَ)."
+            },
+            {
+                topic: "Fi'il Sohih (فعل صحيح)",
+                prompt: "Antara berikut, yang manakah merupakan contoh Fi'il Sohih (Salim/Mahmuz/Muda'af)?",
+                arabic: "كَتَبَ - جَلَسَ - أَكَلَ",
+                options: ["فِعْلٌ صَحِيحٌ", "فِعْلٌ مُعْتَلٌّ", "فِعْلٌ مَجْهُولٌ", "فِعْلٌ مَزِيدٌ"],
+                answer: 0,
+                explain: "Kata kerja yang bebas daripada huruf 'illat (ا ، و ، ي) dikenali sebagai Fi'il Sohih."
+            },
+            {
+                topic: "Fi'il Mu'tal (فعل معتل)",
+                prompt: "Kenalpasti jenis kata kerja yang mengandungi huruf 'illat (و ، ا ، ي):",
+                arabic: "قَالَ - دَعَا - وَجَدَ",
+                options: ["فِعْلٌ صَحِيحٌ", "فِعْلٌ مُعْتَلٌّ", "فِعْلٌ ثُلاَثِيٌّ صَحِيحٌ", "فِعْلٌ مَبْنِيٌّ"],
+                answer: 1,
+                explain: "Kata kerja yang mengandungi huruf 'illat ialah Fi'il Mu'tal."
+            },
+            {
+                topic: "Wazan Fi'il Thulathi (وزن الفعل الثلاثي)",
+                prompt: "Apakah wazan (timbangan) yang sesuai bagi kata kerja 'نَصَرَ'?",
+                arabic: "نَصَرَ  <===>  _____",
+                options: ["فَعُلَ", "فَعِلَ", "فَعَلَ", "أَفْعَلَ"],
+                answer: 2,
+                explain: "Kata 'نَصَرَ' mengikut wazan 'فَعَلَ'."
+            },
+            {
+                topic: "Fi'il Mudhari' (فعل مضارع)",
+                prompt: "Lengkapkan ayat dengan Fi'il Mudhari' jamak:",
+                arabic: "الْمُسْلِمُونَ _____ الصَّلاَةَ فِي الْمَسْجِدِ.",
+                options: ["يُصَلِّي", "يُصَلُّونَ", "صَلُّوا", "صَلَّى"],
+                answer: 1,
+                explain: "'يُصَلُّونَ' untuk jama' muzakkar (هُمْ)."
+            },
+            {
+                topic: "Fi'il Mu'tal Mithal (معتل مثال)",
+                prompt: "Kata kerja 'وَصَلَ' dikategorikan sebagai Fi'il Mu'tal jenis apa?",
+                arabic: "وَصَلَ (Huruf 'illat di awal)",
+                options: ["مُعْتَلٌّ مِثَالٌ", "مُعْتَلٌّ أَجْوَفُ", "مُعْتَلٌّ نَاقِصٌ", "صَحِيحٌ سَالِمٌ"],
+                answer: 0,
+                explain: "Jika huruf 'illat berada di awal kata, ia dinamakan Mu'tal Mithal."
+            },
+            {
+                topic: "Wazan Thulathi Mujarrad",
+                prompt: "Tentukan wazan bagi Fi'il 'عَلِمَ':",
+                arabic: "عَلِمَ  <===>  _____",
+                options: ["فَعَلَ", "فَعِلَ", "فَعُلَ", "تَفَعَّلَ"],
+                answer: 1,
+                explain: "'عَلِمَ' berada di atas wazan 'فَعِلَ'."
+            },
+            {
+                topic: "Fi'il Amar Muannath (فعل أمر للمؤنث)",
+                prompt: "Pilih Fi'il Amar yang betul bagi perempuan (أَنْتِ):",
+                arabic: "يَا مَرْيَمُ، _____ إِلَى الْمَكْتَبَةِ!",
+                options: ["إِذْهَبْ", "إِذْهَبِي", "يَذْهَبُونَ", "ذَهَبَتْ"],
+                answer: 1,
+                explain: "'إِذْهَبِي' ditambah Ya Mukhatabah bagi perintah perempuan."
+            }
+        ];
+
+        /* ===================================================================
+           2. SOUND SYNTHESIZER (Web Audio API)
+           =================================================================== */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playPop() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+            playSuccess() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                    gain.gain.setValueAtTime(0.25, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.3);
+                });
+            }
+            playWrong() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.3);
+            }
+        }
+
+        const sound = new SoundFX();
+
+        /* ===================================================================
+           3. GAME STATE MANAGEMENT
+           =================================================================== */
+        let currentQuestionIdx = 0;
+        let score = 0;
+        let correctAnswers = 0;
+        let timerSeconds = 15;
+        let timerInterval = null;
+        let questionsList = [];
+        let isGameActive = false;
+        let mouseMode = false;
+
+        // Dwell tracking variables
+        let hoveredBoxIdx = -1;
+        let dwellStartTime = 0;
+        const DWELL_DURATION = 1000; // 1 second dwell time
+
+        // Cursor Pointer Coordinates
+        let pointerPos = { x: -100, y: -100 };
+
+        /* ===================================================================
+           4. DOM ELEMENTS
+           =================================================================== */
+        const videoElement = document.getElementById('webcam');
+        const canvasBg = document.getElementById('canvas-bg');
+        const ctxBg = canvasBg.getContext('2d');
+        const canvasFg = document.getElementById('canvas-fg');
+        const ctxFg = canvasFg.getContext('2d');
+
+        const viewStart = document.getElementById('view-start');
+        const viewGame = document.getElementById('view-game');
+        const viewResult = document.getElementById('view-result');
+        const hudStats = document.getElementById('hud-stats');
+
+        const btnStart = document.getElementById('btn-start');
+        const btnMouseMode = document.getElementById('btn-mouse-mode');
+        const btnRestart = document.getElementById('btn-restart');
+        const btnSound = document.getElementById('btn-sound');
+        const iconSound = document.getElementById('icon-sound');
+        const cameraStatus = document.getElementById('camera-status');
+
+        const giftBoxes = [
+            document.getElementById('gift-0'),
+            document.getElementById('gift-1'),
+            document.getElementById('gift-2'),
+            document.getElementById('gift-3')
+        ];
+
+        /* Resize canvas dynamically */
+        function resizeCanvas() {
+            canvasBg.width = window.innerWidth;
+            canvasBg.height = window.innerHeight;
+            canvasFg.width = window.innerWidth;
+            canvasFg.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        /* ===================================================================
+           5. MEDIAPIPE HANDS SETUP
+           =================================================================== */
+        let hands = null;
+        let camera = null;
+
+        function initMediaPipe() {
+            hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults(onHandResults);
+
+            camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+
+            camera.start().then(() => {
+                cameraStatus.className = "p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm flex items-center justify-center gap-3";
+                cameraStatus.innerHTML = `<i class="fa-solid fa-circle-check text-base"></i> Kamera & Isyarat Tangan Sedia!`;
+                btnStart.disabled = false;
+                btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+            }).catch(err => {
+                console.error("Camera access error:", err);
+                cameraStatus.className = "p-4 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-sm flex items-center justify-center gap-3";
+                cameraStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Gagal mengakses kamera. Menggunakan Mod Tetikus.`;
+                enableMouseMode();
+            });
+        }
+
+        /* Hand Tracking Frame Callback */
+        function onHandResults(results) {
+            // Draw background webcam image
+            ctxBg.clearRect(0, 0, canvasBg.width, canvasBg.height);
+            if (results.image) {
+                ctxBg.drawImage(results.image, 0, 0, canvasBg.width, canvasBg.height);
+            }
+
+            // Draw pointer foreground
+            ctxFg.clearRect(0, 0, canvasFg.width, canvasFg.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Index Finger Tip is Landmark 8
+                const indexTip = landmarks[8];
+
+                // Convert normalized coords to screen space (Note: mirror horizontally)
+                const rawX = indexTip.x * canvasFg.width;
+                const rawY = indexTip.y * canvasFg.height;
+                
+                // Un-mirror coordinate for collision detection with DOM overlay
+                pointerPos.x = canvasFg.width - rawX;
+                pointerPos.y = rawY;
+
+                // Draw Cursor Pointer on FG Canvas
+                drawPointer(rawX, rawY);
+
+                if (isGameActive) {
+                    checkDwellInteraction();
+                }
+            } else if (!mouseMode) {
+                pointerPos.x = -100;
+                pointerPos.y = -100;
+                resetDwell();
+            }
+        }
+
+        /* Draw custom particle cursor for index finger */
+        function drawPointer(x, y) {
+            ctxFg.save();
+            ctxFg.shadowBlur = 15;
+            ctxFg.shadowColor = '#06b6d4';
+
+            // Outer ring
+            ctxFg.beginPath();
+            ctxFg.arc(x, y, 18, 0, Math.PI * 2);
+            ctxFg.strokeStyle = '#22d3ee';
+            ctxFg.lineWidth = 3;
+            ctxFg.stroke();
+
+            // Inner core
+            ctxFg.beginPath();
+            ctxFg.arc(x, y, 8, 0, Math.PI * 2);
+            ctxFg.fillStyle = '#f59e0b';
+            ctxFg.fill();
+
+            ctxFg.restore();
+        }
+
+        /* Enable Mouse / Touch Fallback Mode */
+        function enableMouseMode() {
+            mouseMode = true;
+            btnStart.disabled = false;
+            btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            window.addEventListener('mousemove', (e) => {
+                pointerPos.x = e.clientX;
+                pointerPos.y = e.clientY;
+
+                // Render mouse cursor on FG
+                ctxFg.clearRect(0, 0, canvasFg.width, canvasFg.height);
+                drawPointer(canvasFg.width - e.clientX, e.clientY);
+
+                if (isGameActive) {
+                    checkDwellInteraction();
+                }
+            });
+        }
+
+        /* ===================================================================
+           6. DWELL GESTURE INTERACTION LOGIC (1-SECOND HOLD)
+           =================================================================== */
+        function checkDwellInteraction() {
+            let currentHitIdx = -1;
+
+            giftBoxes.forEach((box, idx) => {
+                const rect = box.getBoundingClientRect();
+                if (
+                    pointerPos.x >= rect.left &&
+                    pointerPos.x <= rect.right &&
+                    pointerPos.y >= rect.top &&
+                    pointerPos.y <= rect.bottom
+                ) {
+                    currentHitIdx = idx;
+                }
+            });
+
+            if (currentHitIdx !== -1) {
+                if (hoveredBoxIdx !== currentHitIdx) {
+                    // New box entered
+                    hoveredBoxIdx = currentHitIdx;
+                    dwellStartTime = performance.now();
+                    sound.playPop();
+                } else {
+                    // Progress dwell
+                    const elapsed = performance.now() - dwellStartTime;
+                    const progress = Math.min(1.0, elapsed / DWELL_DURATION);
+
+                    // Update UI progress bar for current box
+                    updateDwellUI(hoveredBoxIdx, progress);
+
+                    if (elapsed >= DWELL_DURATION) {
+                        // Dwell complete - Trigger answer select
+                        selectAnswer(hoveredBoxIdx);
+                        resetDwell();
+                    }
+                }
+            } else {
+                resetDwell();
+            }
+        }
+
+        function updateDwellUI(boxIdx, progress) {
+            giftBoxes.forEach((box, i) => {
+                const progressEl = box.querySelector('.dwell-progress');
+                if (i === boxIdx) {
+                    progressEl.style.transform = `scaleY(${progress})`;
+                    box.style.transform = `scale(${1 + progress * 0.08})`;
+                } else {
+                    progressEl.style.transform = 'scaleY(0)';
+                    box.style.transform = 'scale(1)';
+                }
+            });
+        }
+
+        function resetDwell() {
+            hoveredBoxIdx = -1;
+            dwellStartTime = 0;
+            giftBoxes.forEach((box) => {
+                const progressEl = box.querySelector('.dwell-progress');
+                if (progressEl) progressEl.style.transform = 'scaleY(0)';
+                box.style.transform = 'scale(1)';
+            });
+        }
+
+        /* ===================================================================
+           7. GAMEPLAY ENGINE & LOGIC
+           =================================================================== */
+        function startGame() {
+            sound.init();
+            isGameActive = true;
+            score = 0;
+            correctAnswers = 0;
+            currentQuestionIdx = 0;
+
+            // Shuffle Question Bank
+            questionsList = [...questionBank].sort(() => Math.random() - 0.5);
+
+            // Toggle Views
+            viewStart.classList.add('hidden');
+            viewResult.classList.add('hidden');
+            viewGame.classList.remove('hidden');
+            hudStats.classList.remove('hidden');
+
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            resetDwell();
+            if (currentQuestionIdx >= questionsList.length) {
+                endGame();
+                return;
+            }
+
+            const q = questionsList[currentQuestionIdx];
+
+            // Update HUD
+            document.getElementById('hud-question-num').innerText = `${currentQuestionIdx + 1}/${questionsList.length}`;
+            document.getElementById('hud-score').innerText = score;
+
+            // Load Prompts
+            document.getElementById('topic-badge').innerText = q.topic;
+            document.getElementById('q-prompt').innerText = q.prompt;
+            document.getElementById('q-arabic').innerText = q.arabic;
+
+            // Reset Gift Boxes UI
+            giftBoxes.forEach((box, i) => {
+                box.classList.remove('pointer-events-none', 'opacity-50');
+                const card = box.querySelector('.box-card');
+                const icon = box.querySelector('.gift-icon');
+                const text = box.querySelector('.gift-text');
+
+                card.className = "box-card relative w-full h-full bg-slate-900/85 backdrop-blur-md rounded-2xl border-2 border-amber-500/50 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-amber-400";
+                icon.innerHTML = '<i class="fa-solid fa-gift"></i>';
+                icon.className = "gift-icon text-amber-400 text-4xl md:text-5xl mb-2 transition-transform duration-500";
+                text.innerText = q.options[i];
+            });
+
+            // Start Timer (15 sec per question)
+            timerSeconds = 15;
+            document.getElementById('hud-timer').innerText = `${timerSeconds}s`;
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                document.getElementById('hud-timer').innerText = `${timerSeconds}s`;
+                if (timerSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    handleTimeOut();
+                }
+            }, 1000);
+        }
+
+        function selectAnswer(selectedIndex) {
+            clearInterval(timerInterval);
+            const q = questionsList[currentQuestionIdx];
+            const isCorrect = (selectedIndex === q.answer);
+
+            // Disable further selection
+            giftBoxes.forEach(b => b.classList.add('pointer-events-none'));
+
+            const targetBox = giftBoxes[selectedIndex];
+            const card = targetBox.querySelector('.box-card');
+            const icon = targetBox.querySelector('.gift-icon');
+
+            if (isCorrect) {
+                sound.playSuccess();
+                correctAnswers++;
+                
+                // Time-Based Scoring: Base 100 + Remaining seconds * 10
+                const earnedPoints = 100 + (timerSeconds * 10);
+                score += earnedPoints;
+                document.getElementById('hud-score').innerText = score;
+
+                // Gift Box Opening Animation
+                card.className = "box-card relative w-full h-full bg-emerald-950/90 backdrop-blur-md rounded-2xl border-2 border-emerald-400 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden scale-105 transition-all duration-300";
+                icon.innerHTML = '<i class="fa-solid fa-box-open text-emerald-300"></i>';
+                icon.classList.add('scale-125');
+
+            } else {
+                sound.playWrong();
+                card.className = "box-card relative w-full h-full bg-red-950/90 backdrop-blur-md rounded-2xl border-2 border-red-500 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden transition-all duration-300";
+                icon.innerHTML = '<i class="fa-solid fa-circle-xmark text-red-400"></i>';
+
+                // Reveal Correct Gift Box
+                const correctBox = giftBoxes[q.answer];
+                const correctCard = correctBox.querySelector('.box-card');
+                const correctIcon = correctBox.querySelector('.gift-icon');
+                correctCard.className = "box-card relative w-full h-full bg-emerald-950/90 backdrop-blur-md rounded-2xl border-2 border-emerald-400 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden transition-all duration-300";
+                correctIcon.innerHTML = '<i class="fa-solid fa-box-open text-emerald-300"></i>';
+            }
+
+            // Next question delay
+            setTimeout(() => {
+                currentQuestionIdx++;
+                loadQuestion();
+            }, 2200);
+        }
+
+        function handleTimeOut() {
+            sound.playWrong();
+            giftBoxes.forEach(b => b.classList.add('pointer-events-none'));
+            const q = questionsList[currentQuestionIdx];
+
+            // Highlight Correct Option
+            const correctBox = giftBoxes[q.answer];
+            const correctCard = correctBox.querySelector('.box-card');
+            const correctIcon = correctBox.querySelector('.gift-icon');
+            correctCard.className = "box-card relative w-full h-full bg-emerald-950/90 backdrop-blur-md rounded-2xl border-2 border-emerald-400 p-3 flex flex-col items-center justify-center shadow-2xl overflow-hidden transition-all duration-300";
+            correctIcon.innerHTML = '<i class="fa-solid fa-box-open text-emerald-300"></i>';
+
+            setTimeout(() => {
+                currentQuestionIdx++;
+                loadQuestion();
+            }, 2200);
+        }
+
+        function endGame() {
+            isGameActive = false;
+            clearInterval(timerInterval);
+
+            viewGame.classList.add('hidden');
+            hudStats.classList.add('hidden');
+            viewResult.classList.remove('hidden');
+
+            const accuracy = Math.round((correctAnswers / questionsList.length) * 100);
+
+            document.getElementById('res-score').innerText = score;
+            document.getElementById('res-accuracy').innerText = `${accuracy}%`;
+
+            saveHighScore(score);
+            renderHighScores();
+        }
+
+        function saveHighScore(newScore) {
+            let highScores = JSON.parse(localStorage.getItem('nahu_high_scores') || '[]');
+            const dateStr = new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'short' });
+            
+            highScores.push({ score: newScore, date: dateStr });
+            highScores.sort((a, b) => b.score - a.score);
+            highScores = highScores.slice(0, 5); // Keep Top 5
+
+            localStorage.setItem('nahu_high_scores', JSON.stringify(highScores));
+        }
+
+        function renderHighScores() {
+            const listContainer = document.getElementById('high-score-list');
+            const highScores = JSON.parse(localStorage.getItem('nahu_high_scores') || '[]');
+
+            if (highScores.length === 0) {
+                listContainer.innerHTML = `<div class="text-xs text-slate-400 py-2">Tiada rekod lagi.</div>`;
+                return;
+            }
+
+            listContainer.innerHTML = highScores.map((hs, idx) => `
+                <div class="flex justify-between items-center bg-slate-900/80 p-2.5 rounded-xl border border-slate-700/60 text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="w-5 h-5 flex items-center justify-center rounded-full font-bold ${idx === 0 ? 'bg-amber-400 text-slate-950' : 'bg-slate-700 text-slate-300'}">
+                            ${idx + 1}
+                        </span>
+                        <span class="text-slate-300 font-medium">Pemain</span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-slate-400">${hs.date}</span>
+                        <span class="text-amber-400 font-bold">${hs.score} pts</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        /* ===================================================================
+           8. EVENT LISTENERS & INITIALIZATION
+           =================================================================== */
+        btnStart.addEventListener('click', startGame);
+        btnRestart.addEventListener('click', startGame);
+
+        btnMouseMode.addEventListener('click', () => {
+            enableMouseMode();
+            startGame();
+        });
+
+        // Manual Click/Tap Fallback on Gift Boxes
+        giftBoxes.forEach((box, idx) => {
+            box.addEventListener('click', () => {
+                if (isGameActive) {
+                    selectAnswer(idx);
+                }
+            });
+        });
+
+        // Audio Mute Toggle
+        btnSound.addEventListener('click', () => {
+            sound.enabled = !sound.enabled;
+            if (sound.enabled) {
+                iconSound.className = "fa-solid fa-volume-high text-lg";
+            } else {
+                iconSound.className = "fa-solid fa-volume-xmark text-lg text-slate-500";
+            }
+        });
+
+        // Initialize MediaPipe on Page Load
+        window.onload = () => {
+            initMediaPipe();
+        };
+    </script>
+</body>
+</html>
